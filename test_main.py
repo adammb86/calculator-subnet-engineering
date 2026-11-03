@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from main import app, hitung_subnet
+from main import app, hitung_subnet, alokasi_vlsm
 
 
 client = TestClient(app)
@@ -128,3 +128,54 @@ def test_api_subnet_invalid(ip, prefix):
 def test_root_mengembalikan_200():
     response = client.get("/")
     assert response.status_code == 200
+
+
+# --- VLSM: Alokasi Normal ---------------------------------------------------
+
+def test_alokasi_vlsm_normal():
+    result = alokasi_vlsm("192.168.1.0/24", [100, 50, 20, 2])
+    # Hasil dikembalikan terurut berdasarkan kebutuhan terbesar ke terkecil.
+    assert [item["kebutuhan"] for item in result] == [100, 50, 20, 2]
+    assert [item["network_cidr"] for item in result] == [
+        "192.168.1.0/25",
+        "192.168.1.128/26",
+        "192.168.1.192/27",
+        "192.168.1.224/30",
+    ]
+    # Setiap elemen memuat seluruh kunci hasil hitung_subnet.
+    for item in result:
+        for key in ("mask", "network", "broadcast", "first_host", "last_host", "usable_hosts"):
+            assert key in item
+
+
+# --- VLSM: Kapasitas Overload ------------------------------------------------
+
+def test_alokasi_vlsm_overload():
+    with pytest.raises(ValueError):
+        alokasi_vlsm("192.168.1.0/24", [200, 100])
+
+
+# --- API: POST /api/vlsm -----------------------------------------------------
+
+def test_api_vlsm_sukses():
+    response = client.post(
+        "/api/vlsm",
+        json={"network": "192.168.1.0/24", "kebutuhan_host": [100, 50, 20, 2]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, list)
+    assert [item["network_cidr"] for item in body] == [
+        "192.168.1.0/25",
+        "192.168.1.128/26",
+        "192.168.1.192/27",
+        "192.168.1.224/30",
+    ]
+
+
+def test_api_vlsm_overload():
+    response = client.post(
+        "/api/vlsm",
+        json={"network": "192.168.1.0/24", "kebutuhan_host": [200, 100]},
+    )
+    assert response.status_code == 400

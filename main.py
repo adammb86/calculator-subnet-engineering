@@ -87,6 +87,10 @@ def hitung_subnet(ip: str, prefix: int) -> dict:
     }
 
 
+def alokasi_vlsm(network_cidr: str, kebutuhan_host: list[int]) -> list[dict]:
+    raise NotImplementedError
+
+
 @app.get("/", response_class=HTMLResponse)
 def read_index():
     index_path = Path(__file__).parent / "index.html"
@@ -99,5 +103,15 @@ def read_index():
 def api_subnet(ip: str = Query(...), prefix: int = Query(...)):
     try:
         return hitung_subnet(ip, prefix)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/vlsm")
+def api_vlsm(payload: dict):
+    network = payload.get("network", "")
+    kebutuhan_host = payload.get("kebutuhan_host", [])
+    try:
+        return alokasi_vlsm(network, kebutuhan_host)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
