@@ -88,7 +88,62 @@ def hitung_subnet(ip: str, prefix: int) -> dict:
 
 
 def alokasi_vlsm(network_cidr: str, kebutuhan_host: list[int]) -> list[dict]:
-    raise NotImplementedError
+    if not isinstance(kebutuhan_host, list) or len(kebutuhan_host) == 0:
+        raise ValueError("kebutuhan_host tidak boleh kosong")
+
+    for k in kebutuhan_host:
+        if isinstance(k, bool) or not isinstance(k, int) or k < 1:
+            raise ValueError("kebutuhan host harus integer >= 1")
+
+    # Pisahkan network_cidr menjadi IP dan prefix.
+    if "/" not in network_cidr:
+        raise ValueError("network_cidr harus dalam format IP/prefix")
+    ip, prefix_str = network_cidr.split("/", 1)
+    prefix = _parse_prefix(int(prefix_str)) if prefix_str.isdigit() else None
+    if prefix is None:
+        raise ValueError("prefix harus integer antara 0 dan 32")
+
+    ip_int = _parse_ipv4(ip)
+    mask_int = _mask_from_prefix(prefix)
+    network_int = ip_int & mask_int
+
+    # IP input harus sama dengan network hasil perhitungan (alamat network valid).
+    if network_int != ip_int:
+        raise ValueError("network_cidr bukan alamat network yang valid")
+
+    # Ukuran blok (jumlah alamat) untuk alokasi awal.
+    block_size = 1 << (32 - prefix)
+
+    sorted_kebutuhan = sorted(kebutuhan_host, reverse=True)
+
+    results = []
+    cursor = network_int
+
+    for kebutuhan in sorted_kebutuhan:
+        # Cari blok terkecil (prefix terbesar, maksimum /30) yang kapasitasnya
+        # (2^(32-prefix) - 2) >= kebutuhan + 2, yaitu >= kebutuhan.
+        block_prefix = None
+        block_cap = None
+        for p in range(30, prefix - 1, -1):
+            candidate_cap = 1 << (32 - p)
+            if candidate_cap - 2 >= kebutuhan:
+                block_prefix = p
+                block_cap = candidate_cap
+                break
+        if block_prefix is None:
+            raise ValueError("blok IP tidak cukup untuk menampung seluruh kebutuhan")
+
+        if cursor + block_cap > network_int + block_size:
+            raise ValueError("blok IP tidak cukup untuk menampung seluruh kebutuhan")
+
+        subnet = hitung_subnet(_int_to_ipv4(cursor), block_prefix)
+        subnet["kebutuhan"] = kebutuhan
+        subnet["network_cidr"] = f"{subnet['network']}/{block_prefix}"
+
+        results.append(subnet)
+        cursor += block_cap
+
+    return results
 
 
 @app.get("/", response_class=HTMLResponse)
