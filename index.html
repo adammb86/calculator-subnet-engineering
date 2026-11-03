@@ -148,7 +148,7 @@
 </div>
 <div class="flex flex-col gap-1">
 <h3 class="font-headline-sm text-headline-sm font-semibold">Subnet Calculation Terminated</h3>
-<p class="font-body-md text-body-md">
+<p class="font-body-md text-body-md" id="subnet-error-detail">
           Unable to parse IPv4 parameter input. Please correct the highlighted octet boundary violations before running calculation.
         </p>
 <span class="font-code-sm text-code-sm font-medium mt-1">Rule: IPv4 values comprise four 8-bit octets (0.0.0.0 through 255.255.255.255) and CIDR prefixes 0 through 32.</span>
@@ -178,7 +178,7 @@
 </div>
 <div class="flex flex-col">
 <div class="flex items-center gap-2">
-<span class="font-headline-lg text-headline-lg font-code-lg text-on-surface">192.168.10.64 /26</span>
+<span class="font-headline-lg text-headline-lg font-code-lg text-on-surface" id="subnet-result-network">192.168.10.64 /26</span>
 <span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-semibold">Valid Network ID</span>
 </div>
 <span class="font-body-sm text-body-sm text-on-surface-variant">Class C • Private Subnet (RFC 1918) • Subnet Block #2 of 4</span>
@@ -187,7 +187,7 @@
 <div class="flex items-center gap-space-sm bg-surface-container-low px-space-md py-space-sm rounded-xl">
 <div class="text-right">
 <div class="font-label-sm text-label-sm text-on-surface-variant uppercase">Usable Capacity</div>
-<div class="font-headline-md text-headline-md text-secondary font-bold font-code-md">62 Hosts</div>
+<div class="font-headline-md text-headline-md text-secondary font-bold font-code-md" id="subnet-result-hosts">62 Hosts</div>
 </div>
 <div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-on-surface-variant">
 <span class="material-symbols-outlined text-[22px]">devices</span>
@@ -882,7 +882,65 @@
 
   // Subnet Calculation Actions
   function triggerSubnetCalc() {
-    setStateMode('success');
+    const ip = document.getElementById('subnet-ip').value.trim();
+    const cidr = document.getElementById('subnet-cidr').value;
+
+    fetch(`/api/subnet?ip=${encodeURIComponent(ip)}&prefix=${encodeURIComponent(cidr)}`)
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((body) => {
+            throw new Error(body.detail || 'Invalid input');
+          });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        renderSubnetResult(data);
+        setStateMode('success');
+      })
+      .catch((err) => {
+        document.getElementById('subnet-error-detail').textContent = err.message;
+        setStateMode('error');
+      });
+  }
+
+  function renderSubnetResult(data) {
+    const networkEl = document.getElementById('subnet-result-network');
+    const hostsEl = document.getElementById('subnet-result-hosts');
+
+    if (data.broadcast == null) {
+      // RFC 3021 (/31) atau Host Route (/32)
+      networkEl.textContent = `${data.network}`;
+      hostsEl.textContent = `${data.usable_hosts} Host${data.usable_hosts === 1 ? '' : 's'}`;
+    } else {
+      networkEl.textContent = `${data.network} /${cidrValue()}`;
+      hostsEl.textContent = `${data.usable_hosts} Hosts`;
+    }
+
+    // Isi kartu-kartu metrik
+    setCardValue('Subnet Mask', data.mask);
+    setCardValue('Network ID', data.network);
+    setCardValue('Broadcast Address', data.broadcast === null ? '—' : data.broadcast);
+    setCardValueUsableRange(data.first_host, data.last_host);
+  }
+
+  function cidrValue() {
+    return document.getElementById('subnet-cidr').value;
+  }
+
+  function setCardValue(label, value) {
+    const cards = document.querySelectorAll('#subnet-success-container .font-label-sm');
+    cards.forEach((el) => {
+      if (el.textContent.trim() === label) {
+        const valueEl = el.parentElement.querySelector('.font-code-lg, .font-code-md');
+        if (valueEl) valueEl.textContent = value;
+      }
+    });
+  }
+
+  function setCardValueUsableRange(first, last) {
+    const rangeEl = document.querySelector('#subnet-success-container .font-code-md.text-on-surface');
+    if (rangeEl) rangeEl.textContent = `${first} → ${last}`;
   }
 
   function resetSubnetForm() {
