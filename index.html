@@ -544,7 +544,7 @@
 </div>
 <div class="flex flex-col gap-1">
 <h3 class="font-headline-sm text-headline-sm font-semibold">Allocation Capacity Exceeded</h3>
-<p class="font-body-md text-body-md">
+<p class="font-body-md text-body-md" id="vlsm-error-detail">
           The requested host requirements (<span class="font-code-md font-bold">350 hosts</span>) exceed the maximum usable capacity of base network <span class="font-code-md font-bold">172.16.0.0/24</span> (which only supports 254 hosts).
         </p>
 <span class="font-code-sm text-code-sm font-medium mt-1">Recommendation: Upgrade the major network mask to a <span class="underline">/23</span> (510 hosts) or <span class="underline">/22</span> (1022 hosts) base block.</span>
@@ -646,7 +646,7 @@
 <th class="py-3 px-space-md font-semibold text-center">Efficiency</th>
 </tr>
 </thead>
-<tbody class="divide-y divide-surface-container">
+<tbody class="divide-y divide-surface-container" id="vlsm-table-body">
 <!-- Subnet 1 -->
 <tr class="hover:bg-surface-container-low/60 transition-colors">
 <td class="py-3 px-space-md font-semibold text-on-surface">
@@ -984,6 +984,67 @@
   }
 
   function triggerVlsmCalc() {
-    setStateMode('success');
+    const baseNet = document.getElementById('vlsm-base-net').value.trim();
+    const hostInputs = document.querySelectorAll('#vlsm-rows-container .req-host-input');
+    const kebutuhan = Array.from(hostInputs)
+      .map((el) => parseInt(el.value, 10))
+      .filter((n) => Number.isFinite(n) && n >= 1);
+
+    fetch('/api/vlsm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ network: baseNet, kebutuhan_host: kebutuhan }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((body) => {
+            throw new Error(body.detail || 'Invalid input');
+          });
+        }
+        return res.json();
+      })
+      .then((allocations) => {
+        renderVlsmResult(allocations);
+        setStateMode('success');
+      })
+      .catch((err) => {
+        document.getElementById('vlsm-error-detail').textContent = err.message;
+        setStateMode('error');
+      });
+  }
+
+  function renderVlsmResult(allocations) {
+    const tbody = document.getElementById('vlsm-table-body');
+    const prefixFromCidr = (cidr) => cidr.split('/')[1] || '';
+    const colors = ['bg-primary', 'bg-secondary', 'bg-tertiary', 'bg-primary-fixed-dim', 'bg-secondary-fixed'];
+
+    tbody.innerHTML = allocations.map((item, i) => {
+      const cidr = item.network_cidr;
+      const prefix = prefixFromCidr(cidr);
+      const network = item.network;
+      const broadcast = item.broadcast === null ? '—' : item.broadcast;
+      const range = item.broadcast === null
+        ? `${item.first_host} - ${item.last_host}`
+        : `${item.first_host} - ${item.last_host}`;
+      const efficiency = Math.round((item.kebutuhan / item.usable_hosts) * 100);
+      return `
+        <tr class="hover:bg-surface-container-low/60 transition-colors">
+          <td class="py-3 px-space-md font-semibold text-on-surface">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full ${colors[i % colors.length]}"></span>
+              <span>Subnet ${i + 1}</span>
+            </div>
+          </td>
+          <td class="py-3 px-space-md font-code-sm text-code-sm text-right">${item.kebutuhan}</td>
+          <td class="py-3 px-space-md font-code-sm text-code-sm text-right font-bold text-secondary">${item.usable_hosts}</td>
+          <td class="py-3 px-space-md font-code-sm text-code-sm">${item.mask} <span class="text-primary font-bold">/${prefix}</span></td>
+          <td class="py-3 px-space-md font-code-sm text-code-sm font-semibold text-on-surface">${network}</td>
+          <td class="py-3 px-space-md font-code-sm text-code-sm text-on-surface-variant">${range}</td>
+          <td class="py-3 px-space-md font-code-sm text-code-sm text-error">${broadcast}</td>
+          <td class="py-3 px-space-md text-center">
+            <span class="px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-code-sm text-[11px] font-semibold">${efficiency}% fit</span>
+          </td>
+        </tr>`;
+    }).join('');
   }
 </script></div></main><footer class="w-full bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] mt-space-xl"><div class="max-w-7xl mx-auto px-gutter py-space-xl"><div class="grid grid-cols-1 md:grid-cols-3 gap-gutter"><div class="flex flex-col gap-space-sm"><div class="flex items-center gap-space-xs text-primary"><span class="material-symbols-outlined text-[18px]">lightbulb</span><span class="font-headline-sm text-headline-sm text-on-surface">Educational Quick Tips</span></div><p class="font-body-sm text-body-sm text-on-surface-variant">To quickly deduce network blocks in your head, calculate the magic number: 256 minus the interesting octet subnet mask value. This yields the block step size every time.</p></div><div class="flex flex-col gap-space-sm"><div class="flex items-center gap-space-xs text-secondary"><span class="material-symbols-outlined text-[18px]">dns</span><span class="font-headline-sm text-headline-sm text-on-surface">CIDR Reference Quick-Guide</span></div><div class="grid grid-cols-2 gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="bg-surface-container-low px-space-sm py-space-xs rounded">/24 → 254 Hosts</span><span class="bg-surface-container-low px-space-sm py-space-xs rounded">/26 → 62 Hosts</span><span class="bg-surface-container-low px-space-sm py-space-xs rounded">/28 → 14 Hosts</span><span class="bg-surface-container-low px-space-sm py-space-xs rounded">/30 → 2 Hosts (PtP)</span></div></div><div class="flex flex-col gap-space-sm"><div class="flex items-center gap-space-xs text-tertiary"><span class="material-symbols-outlined text-[18px]">keyboard</span><span class="font-headline-sm text-headline-sm text-on-surface">Classroom Lab Hotkeys</span></div><div class="flex flex-col gap-space-xs font-body-sm text-body-sm text-on-surface-variant"><div class="flex items-center justify-between"><span class="font-code-sm text-code-sm bg-surface-container-low px-space-xs rounded">Alt + T</span><span>Toggle Teacher Answer Mode</span></div><div class="flex items-center justify-between"><span class="font-code-sm text-code-sm bg-surface-container-low px-space-xs rounded">Alt + E</span><span>Export Student Lab Sheet</span></div></div></div></div><div class="mt-space-lg pt-space-md flex flex-col sm:flex-row items-center justify-between gap-space-sm"><span class="font-body-sm text-body-sm text-on-surface-variant">© NetSubnet Edu • Designed for Career &amp; Technical Education Lab Networks.</span><span class="font-code-sm text-code-sm text-on-surface-variant">IPv4 Standards RFC 791 / RFC 4632</span></div></div></footer></body></html>
